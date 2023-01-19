@@ -3,9 +3,11 @@ package org.jlab.clas12.urwell;
 import java.util.ArrayList;
 import java.util.List;
 import org.jlab.clas.physics.Particle;
+import org.jlab.clas.swimtools.Swim;
 import org.jlab.detector.base.DetectorDescriptor;
 import org.jlab.detector.base.DetectorType;
 import org.jlab.geom.prim.Line3D;
+import org.jlab.geom.prim.Plane3D;
 import org.jlab.geom.prim.Point3D;
 import org.jlab.io.base.DataBank;
 import org.jlab.io.base.DataEvent;
@@ -27,6 +29,8 @@ public class Event {
     private final double deltaE = 200;
     private final double deltaT = 50;
     private final double meanT = 180;
+    private final double maxDist = 1;
+    private final double targetz = -3;
     
     public Event(DataEvent event, Line3D[][] dcWires) {
         
@@ -66,6 +70,18 @@ public class Event {
         return mc;
     }
 
+    public Point3D swimMcToPlane(Swim swim, int sector, double z) {
+        Point3D V    = new Point3D(mc.vx(),mc.vy(),mc.vz());
+        Point3D P    = new Point3D(mc.px(),mc.py(),mc.pz());
+        URWell.TOLOCAL[sector-1].apply(V);
+        URWell.TOLOCAL[sector-1].apply(P);
+        swim.SetSwimParameters(V.x(), V.y(), V.z(), P.x(), P.y(), P.z(), mc.charge());
+        double[] swimResults = swim.SwimToPlaneTiltSecSys(sector,z);
+        Point3D swimV = new Point3D(swimResults[0],swimResults[1],swimResults[2]);
+//        Point3D swimP = new Point3D(swimResults[3],swimResults[4],swimResults[5]);
+        return swimV;
+    }
+    
     public List<Hit> getUrwellHits() {
         return urHits;
     }
@@ -190,7 +206,7 @@ public class Event {
             int tdc       = bank.getInt("TDC", j);
 
             DCHit wire = new DCHit(id, sector, layer, component, order, tdc);
-            wire.setLine(wires[wire.superlayer()-1][component -1]);
+            wire.setLine(wires[wire.layer()-1][component -1]);
             dcHits.add(wire);
         }
     }    
@@ -230,7 +246,7 @@ public class Event {
         String name = "DC::tdc";
         event.removeBank(name);
         
-        List<DCHit> wires = this.getSelectedDcHits();
+        List<DCHit> wires = this.getDcHits();
         
         DataBank bank = event.createBank(name, wires.size());
         for(int i=0; i<wires.size(); i++) {
@@ -238,7 +254,10 @@ public class Event {
             bank.setByte("sector", i, (byte) wires.get(i).sector());
             bank.setByte("layer", i, (byte) wires.get(i).layer());
             bank.setShort("component", i, (short) wires.get(i).component());
-            bank.setByte("order", i, (byte) wires.get(i).order());
+            if(wires.get(i).isMatched()) 
+                bank.setByte("order", i, (byte) wires.get(i).order());
+            else 
+                bank.setByte("order", i, (byte) (wires.get(i).order()+10)); 
             bank.setInt("TDC", i, wires.get(i).tdc());
         }
         event.appendBank(bank);
@@ -258,7 +277,7 @@ public class Event {
 
     private void matchToHits() {
         for(DCHit wire : this.dcHits) {
-            if(wire.sector()==1 && wire.superlayer()<3) {
+            if(wire.sector()!=0 && wire.superlayer()<3) {
                 for(Cross cross : this.urCrosses) {
                     if(cross.isMatched(wire))
                         wire.setMatchStatus(true);
@@ -440,11 +459,22 @@ public class Event {
         }
                             
         private boolean isMatched(Line3D wire) {
-            Line3D dcToCross = wire.distance(this.local());
-            dcToCross.rotateY(Math.toRadians(25)-this.position().toVector3D().theta());
-            dcToCross.setEnd(dcToCross.end().x(), dcToCross.end().y(), dcToCross.origin().z());
-            return dcToCross.length()<3 && this.isGood() && this.isInTime();
-        }                    
+            return this.distance(wire)<maxDist && this.isGood() && this.isInTime();
+        }            
+
+        public double distance(Line3D wire) {
+            Line3D crossLine = new Line3D(this.position(), this.position().vectorFrom(0, 0, targetz).asUnit());
+            URWell.TOLOCAL[this.sector()-1].apply(crossLine);
+            Plane3D dcLayer = new Plane3D(0, 0, wire.origin().z(), 0, 0, 1);
+            Point3D crossProjection = new Point3D();
+            int nint = dcLayer.intersection(crossLine, crossProjection);
+            if(nint>0) {
+                return wire.distance(crossProjection).length();
+            }
+            else {
+                return Double.MAX_VALUE;
+            }
+        }  
     }
 
        
@@ -466,7 +496,7 @@ public class Event {
             this.superlayer = superlayer;
             this.avgWire = avgWire;
             this.status = status;
-            if(sector!=1 || superlayer>2)
+            if(sector==0 || superlayer>2)
                 this.match = true;
         }
 
@@ -540,7 +570,7 @@ public class Event {
             this.component = component;
             this.order = order;
             this.tdc = tdc;
-            if(sector!=1 || layer>12)
+            if(sector==0 || layer>12)
                 this.match = true;
         }
 

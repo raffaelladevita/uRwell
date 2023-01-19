@@ -1,29 +1,27 @@
 package org.jlab.clas12.urwell;
 
+import cnuphys.magfield.MagneticFieldInitializationException;
+import cnuphys.magfield.MagneticFields;
 import eu.mihosoft.vrl.v3d.Vector3d;
-import java.util.ArrayList;
+import java.io.FileNotFoundException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.jlab.io.base.DataBank;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataSource;
-import org.jlab.utils.benchmark.ProgressPrintout;
 import org.jlab.utils.options.OptionParser;
-import org.jlab.jnp.utils.data.TextHistogram;
 import org.jlab.detector.base.DetectorType;
 import org.jlab.geom.prim.Point3D;
-import org.jlab.groot.base.GStyle;
 import org.jlab.groot.data.H1F;
 import org.jlab.groot.data.H2F;
 import org.jlab.groot.math.F1D;
-import org.jlab.groot.data.IDataSet;
-import org.jlab.groot.data.TDirectory;
 import org.jlab.groot.fitter.DataFitter;
-import org.jlab.groot.graphics.EmbeddedCanvas;
 import org.jlab.groot.group.DataGroup;
 import javax.swing.JFrame;
 import org.jlab.clas.physics.Particle;
+import org.jlab.clas.swimtools.Swim;
 import org.jlab.clas12.urwell.Event.Cluster;
 import org.jlab.clas12.urwell.Event.Cross;
 import org.jlab.clas12.urwell.Event.Hit;
@@ -39,6 +37,8 @@ import org.jlab.geom.prim.Vector3D;
 import org.jlab.groot.graphics.EmbeddedCanvasTabbed;
 import org.jlab.groot.graphics.EmbeddedPad;
 import org.jlab.io.hipo.HipoDataSync;
+import org.jlab.utils.CLASResources;
+import org.jlab.utils.benchmark.ProgressPrintout;
 
 /**
  *
@@ -52,8 +52,10 @@ public class URWell {
 
     private final static Line3D[][] dcWires = new Line3D[36][112];
     private final static Vector3D[] dcNorms = new Vector3D[6];
-    private static Transformation3D[] toLocal = new Transformation3D[6];
-    private final double thetaTilt = 25;
+    public final static Transformation3D[] TOLOCAL = new Transformation3D[6];
+    public final static double TILT = 25;
+    
+    private Swim swim = null;
     
     private final Map<String, DataGroup> dataGroups = new LinkedHashMap<>();
 
@@ -61,6 +63,7 @@ public class URWell {
 
     public URWell() {
         this.createHistos();
+        this.loadFields();
         this.loadGeometry();
     }
     
@@ -87,15 +90,31 @@ public class URWell {
         return this.dataGroups.get(key);
     }
     
-
+    private void loadFields() {
+        try {
+            String clasDictionaryPath = CLASResources.getResourcePath("etc");
+            String magfieldDir = clasDictionaryPath + "/data/magfield/";
+            String solenoidMap = "Symm_solenoid_r601_phi1_z1201_13June2018.dat";
+            String torusMap    = "Symm_torus_r2501_phi16_z251_24Apr2018.dat";
+            MagneticFields.getInstance().initializeMagneticFields(magfieldDir,torusMap,solenoidMap);
+            // scale and shift field for RG-A/B inbending configuration
+            MagneticFields.getInstance().getTorus().setScaleFactor(-1);
+            MagneticFields.getInstance().getSolenoid().setScaleFactor(-1);
+            MagneticFields.getInstance().getSolenoid().setShiftZ(-3);
+        } catch (FileNotFoundException | MagneticFieldInitializationException ex) {
+            Logger.getLogger(URWell.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        swim = new Swim();
+    }
+    
     private void loadGeometry() {
         ConstantProvider provider   = GeometryFactory.getConstants(DetectorType.DC, 11, "default");
         DCGeant4Factory  dcDetector = new DCGeant4Factory(provider, DCGeant4Factory.MINISTAGGERON, false);
         for(int is=0; is<6; is++) {
             dcNorms[is] = dcDetector.getTrajectorySurface(is+1, 1, 1).normal();
-            toLocal[is] = new Transformation3D(); 
-            toLocal[is].rotateZ(-is*Math.toRadians(60));
-            toLocal[is].rotateY(-Math.toRadians(25));
+            TOLOCAL[is] = new Transformation3D(); 
+            TOLOCAL[is].rotateZ(-is*Math.toRadians(60));
+            TOLOCAL[is].rotateY(-Math.toRadians(TILT));
         }
 
         for(int il=0; il<36; il++) {
@@ -206,14 +225,14 @@ public class URWell {
             H1F h2c = new H1F("hiTimeCutL"+layer, "Hit Time (ns)", "Counts", 100, 0.0, 600.0);         
             h2c.setOptStat(Integer.parseInt("1111")); 
             h2c.setLineColor(2);
-            H2F h4 = new H2F("hiDCL"+layer, "", 100, -100, 100, 56, 0, 112);
-            h4.setTitleX("uRWell cross x (mm)");
-            h4.setTitleY("DC SL" + layer + " cluster average wire");
-            H2F h4c = new H2F("hiDCCutL"+layer, "", 100, -100, 100, 56, 0, 112);
-            h4c.setTitleX("uRWell cross x (mm)");
-            h4c.setTitleY("DC SL" + layer + " cluster average wire");
-    //        H1F h7 = new H1F("hiDCtoUR", "DC Cluster DCCluster", "Counts", 100, -50, 50);       
-    //        h7.setOptStat(Integer.parseInt("1111")); 
+            H2F h3 = new H2F("hiDCL"+layer, "", 100, -100, 100, 56, 0, 112);
+            h3.setTitleX("uRWell cross x (mm)");
+            h3.setTitleY("DC SL" + layer + " cluster average wire");
+            H2F h3c = new H2F("hiDCCutL"+layer, "", 100, -100, 100, 56, 0, 112);
+            h3c.setTitleX("uRWell cross x (mm)");
+            h3c.setTitleY("DC SL" + layer + " cluster average wire");
+            H1F h4 = new H1F("hiDCtoUR"+layer, "Distance (cm)", "Counts", 100, 0.0, 10.0);         
+            h4.setOptStat(Integer.parseInt("1111")); 
             H1F h5 = new H1F("hiWireL"+layer, "DC SL" + layer + " cluster wire", "Counts", 112, 0, 112);       
             h5.setOptStat(Integer.parseInt("1111")); 
             H1F h5c = new H1F("hiWireCutL"+layer, "DC SL" + layer + " cluster Wire", "Counts", 112, 0, 112);        
@@ -222,8 +241,9 @@ public class URWell {
 //            dg.addDataSet(h1, il*4 + 0);
             dg.addDataSet(h2,  il*5 + 0);
             dg.addDataSet(h2c, il*5 + 0);
-            dg.addDataSet(h4,  il*5 + 2);
-            dg.addDataSet(h4c, il*5 + 3);
+            dg.addDataSet(h3,  il*5 + 1);
+            dg.addDataSet(h3c, il*5 + 2);
+            dg.addDataSet(h4,  il*5 + 3);
             dg.addDataSet(h5,  il*5 + 4);
             dg.addDataSet(h5c, il*5 + 4);
         }
@@ -265,7 +285,7 @@ public class URWell {
     
     public void fillHitHisto(List<Hit> hits) {
         for(Hit hit : hits) {
-            if(hit.sector()!=1) continue;
+            if(hit.sector()==0) continue;
             dataGroups.get("Hits").getH1F("hiEnergyL"+hit.layer()).fill(hit.energy());
             dataGroups.get("Hits").getH1F("hiTimeL"+hit.layer()).fill(hit.time());
             dataGroups.get("Hits").getH2F("hiEnergyStripL"+hit.layer()).fill(hit.energy(), hit.strip());
@@ -276,7 +296,7 @@ public class URWell {
     
     public void fillClusterHisto(List<Cluster> clusters) {
         for(Cluster cluster : clusters) {
-            if(cluster.sector()!=1) continue;
+            if(cluster.sector()==0) continue;
             dataGroups.get("Clusters").getH1F("hiEnergyL"+cluster.layer()).fill(cluster.energy());
             dataGroups.get("Clusters").getH1F("hiTimeL"+cluster.layer()).fill(cluster.time());
             dataGroups.get("Clusters").getH2F("hiEnergyStripL"+cluster.layer()).fill(cluster.energy(), cluster.strip());
@@ -284,24 +304,20 @@ public class URWell {
         }             
     }
     
-    public void fillCrossHisto(List<Cross> crosses, Particle part) {
-        for(Cross cross : crosses) {
-            if(cross.sector()!=1) continue;
+    public void fillCrossHisto(Event event) {
+        for(Cross cross : event.getUrwellCrosses()) {
+            if(cross.sector()==0) continue;
 //                    if(!cross.isGood()) continue;
             dataGroups.get("Crosses").getH1F("hiEnergy").fill(cross.energy());
             dataGroups.get("Crosses").getH1F("hiTime").fill(cross.time());
             if(cross.isGood()) {
                 dataGroups.get("Crosses").getH1F("hiEnergyGood").fill(cross.energy());
                 dataGroups.get("Crosses").getH1F("hiTimeGood").fill(cross.time());                        
-                if(part!=null) {
-                    Point3D traj = new Point3D();
-                    Plane3D plane = new Plane3D(cross.position(), dcNorms[cross.sector()-1]);
-                    Line3D line = new Line3D(part.vx(), part.vy(), part.vz(), part.px(), part.py(), part.pz());
-                    plane.intersectionRay(line, traj);
-                    Vector3D delta = cross.position().vectorTo(traj);
-                    toLocal[cross.sector()-1].apply(traj);
-                    dataGroups.get("Crosses").getH1F("hiDeltaX").fill(delta.x());
-                    dataGroups.get("Crosses").getH1F("hiDeltaY").fill(delta.y());
+                if(event.getMc()!=null) {
+                    Point3D traj = event.swimMcToPlane(swim, cross.sector(), cross.local().z());
+                    Vector3D delta = cross.local().vectorTo(traj);
+                    dataGroups.get("Crosses").getH1F("hiDeltaX").fill(delta.x()*10);
+                    dataGroups.get("Crosses").getH1F("hiDeltaY").fill(delta.y()*10);
                 }
             }
             dataGroups.get("Crosses").getH2F("hiEnergyX").fill(cross.energy(), cross.local().x());
@@ -310,21 +326,22 @@ public class URWell {
             dataGroups.get("Crosses").getH2F("hiTime2D").fill(cross.getCluster1().time(), cross.getCluster2().time());
         }
     }
-    
-    
+
     public static void main (String[] args)  {
 
         OptionParser parser = new OptionParser("urwell");
         parser.setRequiresInputList(false);
-        parser.addOption("-o", "",  "output event file name");
+        parser.addOption("-o",  "", "output event file name");
         parser.addOption("-m", "0", "match based on hits (0) or clusters (1)");
+        parser.addOption("-n","-1", "maximum number of events to process");
         parser.parse(args);
         
         
         String output = null;
         if(!parser.getOption("-o").stringValue().isBlank()) 
             output = parser.getOption("-o").stringValue();
-        boolean hitmatch = parser.getOption("-m").intValue()==0;
+        boolean hitmatch  = parser.getOption("-m").intValue()==0;
+        int     maxEvents = parser.getOption("-n").intValue();
         
 
         URWell analysis = new URWell();        
@@ -334,10 +351,17 @@ public class URWell {
         
         List<String> inputFiles = parser.getInputList();
         
+        ProgressPrintout progress = new ProgressPrintout();
+
+        int counter=-1;
+
         for(String input : inputFiles) {
             HipoDataSource  reader = new HipoDataSource();
             reader.open(input);
             while(reader.hasEvent()) {
+                
+                counter++;
+                
                 DataEvent ev = reader.getNextEvent();
 
                 Event event = new Event(ev, URWell.dcWires);
@@ -351,9 +375,9 @@ public class URWell {
                     analysis.fillClusterHisto(event.getUrwellClusters());
                 }
                 if(!event.getUrwellCrosses().isEmpty() && !event.getUrwellClusters().isEmpty()) {
-                    analysis.fillCrossHisto(event.getUrwellCrosses(), event.getMc());
+                    analysis.fillCrossHisto(event);
                     for(Cluster cluster : event.getUrwellClusters()) {
-                        if(cluster.sector()!=1) continue;
+                        if(cluster.sector()==0) continue;
                         analysis.getGroup("Matching").getH1F("hiTimeL"+cluster.layer()).fill(cluster.time());
                         if(cluster.getCrossIndex()>=0) {
                             Cross cross = event.getUrwellCrosses().get(cluster.getCrossIndex());
@@ -365,11 +389,12 @@ public class URWell {
                 }
                 if(!hitmatch) {
                     for(DCCluster wire : event.getDcClusters()) {
-                        if(wire.sector()==1 && wire.superlayer()<3) {
+                        if(wire.sector()!=0 && wire.superlayer()<3) {
                             analysis.getGroup("Matching").getH1F("hiWireL" + wire.superlayer()).fill(wire.avgWire());
                             for(Cross cross : event.getUrwellCrosses()) {
                                 if(cross.sector()==wire.sector()) {
                                     analysis.getGroup("Matching").getH2F("hiDCL" + wire.superlayer()).fill(cross.local().x(), wire.avgWire());
+                                    analysis.getGroup("Matching").getH1F("hiDCtoUR" + wire.superlayer()).fill(cross.distance(wire.line()));
                                     if(cross.isMatched(wire)) 
                                         analysis.getGroup("Matching").getH2F("hiDCCutL" + wire.superlayer()).fill(cross.local().x(), wire.avgWire());
                                 }
@@ -381,11 +406,12 @@ public class URWell {
                 }
                 else {
                     for(DCHit wire : event.getDcHits()) {
-                        if(wire.sector()==1 && wire.layer()<13) {
+                        if(wire.sector()!=0 && wire.layer()<13) {
                             analysis.getGroup("Matching").getH1F("hiWireL" + wire.superlayer()).fill(wire.component());
                             for(Cross cross : event.getUrwellCrosses()) {
                                 if(cross.sector()==wire.sector()) {
                                     analysis.getGroup("Matching").getH2F("hiDCL" + wire.superlayer()).fill(cross.local().x(), wire.component());
+                                    analysis.getGroup("Matching").getH1F("hiDCtoUR" + wire.superlayer()).fill(cross.distance(wire.line()));
                                     if(cross.isMatched(wire))
                                         analysis.getGroup("Matching").getH2F("hiDCCutL" + wire.superlayer()).fill(cross.local().x(), wire.component());
                                 }
@@ -396,8 +422,15 @@ public class URWell {
                     }
                 }
                 if(output!=null) writer.writeEvent(event.reWrite(ev));
-            }
+                                    
+                progress.updateStatus();
+                
+                if(maxEvents>0){
+                    if(counter>=maxEvents) break;
+                }
 
+            }
+            progress.showStatus();
             reader.close();
         }
         
