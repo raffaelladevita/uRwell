@@ -37,6 +37,7 @@ import org.jlab.geom.prim.Vector3D;
 import org.jlab.groot.graphics.EmbeddedCanvasTabbed;
 import org.jlab.groot.graphics.EmbeddedPad;
 import org.jlab.io.hipo.HipoDataSync;
+import org.jlab.logging.DefaultLogger;
 import org.jlab.utils.CLASResources;
 import org.jlab.utils.benchmark.ProgressPrintout;
 
@@ -334,6 +335,7 @@ public class URWell {
         parser.addOption("-o",  "", "output event file name");
         parser.addOption("-m", "0", "match based on hits (0) or clusters (1)");
         parser.addOption("-n","-1", "maximum number of events to process");
+        parser.addOption("-w", "1", "open graphical window (1) or run in batch mode (0)");
         parser.parse(args);
         
         
@@ -342,8 +344,11 @@ public class URWell {
             output = parser.getOption("-o").stringValue();
         boolean hitmatch  = parser.getOption("-m").intValue()==0;
         int     maxEvents = parser.getOption("-n").intValue();
+        boolean window    = parser.getOption("-w").intValue()==1;
         
-
+        if(!window) System.setProperty("java.awt.headless", "true");
+        DefaultLogger.debug();
+        
         URWell analysis = new URWell();        
 
         HipoDataSync    writer = new HipoDataSync();
@@ -439,12 +444,13 @@ public class URWell {
 //            URWell.fitGauss(analysis.getGroup("Matching").getH1F("hiTimeL"+(i+1)));
 //            URWell.fitGauss(analysis.getGroup("Matching").getH1F("hiSpace"+axes[i]));
 //        }
-        JFrame frame = new JFrame("URWell Reconstruction");
-        frame.setSize(1500,800);
-        frame.add(analysis.getCanvas());
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);     
-
+        if(window) {
+            JFrame frame = new JFrame("URWell Reconstruction");
+            frame.setSize(1500,800);
+            frame.add(analysis.getCanvas());
+            frame.setLocationRelativeTo(null);
+            frame.setVisible(true);     
+        }
     }
 }    
 
