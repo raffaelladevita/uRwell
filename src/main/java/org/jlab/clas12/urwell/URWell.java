@@ -334,6 +334,7 @@ public class URWell {
         parser.setRequiresInputList(false);
         parser.addOption("-o",  "", "output event file name");
         parser.addOption("-m", "0", "match based on hits (0) or clusters (1)");
+        parser.addOption("-d", "0", "label unmatched hits (0) or drop them (1)");
         parser.addOption("-n","-1", "maximum number of events to process");
         parser.addOption("-w", "1", "open graphical window (1) or run in batch mode (0)");
         parser.parse(args);
@@ -343,6 +344,7 @@ public class URWell {
         if(!parser.getOption("-o").stringValue().isBlank()) 
             output = parser.getOption("-o").stringValue();
         boolean hitmatch  = parser.getOption("-m").intValue()==0;
+        boolean drop      = parser.getOption("-d").intValue()==1;
         int     maxEvents = parser.getOption("-n").intValue();
         boolean window    = parser.getOption("-w").intValue()==1;
         
@@ -426,7 +428,7 @@ public class URWell {
                         }
                     }
                 }
-                if(output!=null) writer.writeEvent(event.reWrite(ev));
+                if(output!=null) writer.writeEvent(event.reWrite(ev, drop));
                                     
                 progress.updateStatus();
                 

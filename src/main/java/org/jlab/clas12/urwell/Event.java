@@ -241,12 +241,13 @@ public class Event {
         return event;
     }
     
-    public DataEvent reWrite(DataEvent event) {
+    public DataEvent reWrite(DataEvent event, boolean drop) {
 
         String name = "DC::tdc";
         event.removeBank(name);
         
         List<DCHit> wires = this.getDcHits();
+        if(drop) wires = this.getSelectedDcHits();
         
         DataBank bank = event.createBank(name, wires.size());
         for(int i=0; i<wires.size(); i++) {
