@@ -145,6 +145,12 @@ public class Event {
             double energy = bank.getFloat("energy", i);
             double time   = bank.getFloat("time", i);
             Cluster cluster = new Cluster(sector, layer, strip, size, energy, time);
+            cluster.line(bank.getFloat("xo", i),
+                         bank.getFloat("yo", i),
+                         bank.getFloat("zo", i),
+                         bank.getFloat("xe", i),
+                         bank.getFloat("ye", i),
+                         bank.getFloat("ze", i));
             urClusters.add(cluster);
         }
     }
@@ -334,6 +340,7 @@ public class Event {
         private int         size = 0;
         private double    energy = 0;   
         private double      time = 0;
+        private Line3D      line = null;
         private int   crossIndex = -1;
         
         public Cluster(int sector, int layer, int component, int size, double energy, double time){
@@ -367,6 +374,24 @@ public class Event {
             return time;
         }
 
+        public Line3D line() {
+            return line;
+        }
+
+        public void line(double xo, double yo, double zo, double xe, double ye, double ze) {
+            this.line = new Line3D(xo, yo, zo, xe, ye, ze);
+        }
+
+        public Line3D localLine() {
+            Line3D local = new Line3D(line);
+            URWell.TOLOCAL[this.sector()-1].apply(local);
+            return local;
+        }
+        
+        public double localZ() {
+            return this.localLine().origin().z();
+        }
+        
         public int getCrossIndex() {
             return crossIndex;
         }

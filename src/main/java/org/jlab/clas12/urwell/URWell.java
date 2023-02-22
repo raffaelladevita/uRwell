@@ -20,7 +20,6 @@ import org.jlab.groot.math.F1D;
 import org.jlab.groot.fitter.DataFitter;
 import org.jlab.groot.group.DataGroup;
 import javax.swing.JFrame;
-import org.jlab.clas.physics.Particle;
 import org.jlab.clas.swimtools.Swim;
 import org.jlab.clas12.urwell.Event.Cluster;
 import org.jlab.clas12.urwell.Event.Cross;
@@ -31,7 +30,6 @@ import org.jlab.detector.base.GeometryFactory;
 import org.jlab.detector.geant4.v2.DCGeant4Factory;
 import org.jlab.geom.base.ConstantProvider;
 import org.jlab.geom.prim.Line3D;
-import org.jlab.geom.prim.Plane3D;
 import org.jlab.geom.prim.Transformation3D;
 import org.jlab.geom.prim.Vector3D;
 import org.jlab.groot.graphics.EmbeddedCanvasTabbed;
@@ -61,6 +59,8 @@ public class URWell {
     private final Map<String, DataGroup> dataGroups = new LinkedHashMap<>();
 
     private static final String[] axes = {"x", "y"};
+    
+    private Point3D[] trajs = new Point3D[NLAYER];
 
     public URWell() {
         this.createHistos();
@@ -157,7 +157,7 @@ public class URWell {
         }
         dataGroups.put("Hits", hits);
 
-        DataGroup clusters = new DataGroup(4,2);
+        DataGroup clusters = new DataGroup(5,2);
         for(int il=0; il<NLAYER; il++) {
             int layer = il+1;
             H1F cluster1 = new H1F("hiEnergyL"+layer, "Energy (eV)", "Counts", 100, 0.0, 1500.0);         
@@ -170,10 +170,13 @@ public class URWell {
             H2F cluster4 = new H2F("hiTimeStripL"+layer, "", 100, 0.0, 600.0, 2000, 0, 2000);         
             cluster4.setTitleX("Time (ns)");
             cluster4.setTitleY("Strip");
-            clusters.addDataSet(cluster1,  il*4 + 0);
-            clusters.addDataSet(cluster2,  il*4 + 1);
-            clusters.addDataSet(cluster3,  il*4 + 2);
-            clusters.addDataSet(cluster4,  il*4 + 3);
+            H1F cluster5 = new H1F("hiDistanceL"+layer, "Distance (mm)", "Counts", 100, -2, 2);         
+            cluster5.setOptStat("1111");
+            clusters.addDataSet(cluster1,  il*5 + 0);
+            clusters.addDataSet(cluster2,  il*5 + 1);
+            clusters.addDataSet(cluster3,  il*5 + 2);
+            clusters.addDataSet(cluster4,  il*5 + 3);
+            clusters.addDataSet(cluster5,  il*5 + 4);
         }
         dataGroups.put("Clusters", clusters);
 
@@ -295,14 +298,20 @@ public class URWell {
         }
     }
     
-    public void fillClusterHisto(List<Cluster> clusters) {
-        for(Cluster cluster : clusters) {
+    public void fillClusterHisto(Event event) {
+        for(Cluster cluster : event.getUrwellClusters()) {
             if(cluster.sector()==0) continue;
             dataGroups.get("Clusters").getH1F("hiEnergyL"+cluster.layer()).fill(cluster.energy());
             dataGroups.get("Clusters").getH1F("hiTimeL"+cluster.layer()).fill(cluster.time());
             dataGroups.get("Clusters").getH2F("hiEnergyStripL"+cluster.layer()).fill(cluster.energy(), cluster.strip());
             dataGroups.get("Clusters").getH2F("hiTimeStripL"+cluster.layer()).fill(cluster.time(), cluster.strip());
-        }             
+            if(event.getMc()!=null) {
+                Point3D traj = event.swimMcToPlane(swim, cluster.sector(), cluster.localZ());
+                Line3D distance = cluster.localLine().distance(traj);
+                double delta = distance.length()*Math.signum(distance.direction().x());
+                dataGroups.get("Clusters").getH1F("hiDistanceL"+cluster.layer()).fill(delta*10);
+            }             
+        }
     }
     
     public void fillCrossHisto(Event event) {
@@ -379,7 +388,7 @@ public class URWell {
                     analysis.fillHitHisto(event.getUrwellHits());
                 }
                 if(!event.getUrwellClusters().isEmpty()) {
-                    analysis.fillClusterHisto(event.getUrwellClusters());
+                    analysis.fillClusterHisto(event);
                 }
                 if(!event.getUrwellCrosses().isEmpty() && !event.getUrwellClusters().isEmpty()) {
                     analysis.fillCrossHisto(event);
